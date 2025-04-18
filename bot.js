@@ -36,7 +36,11 @@ let buyingUserId = null;
 // Load existing data if available
 try {
     if (fs.existsSync(COINS_FILE)) {
-        userCoins = JSON.parse(fs.readFileSync(COINS_FILE));
+        const loadedCoins = JSON.parse(fs.readFileSync(COINS_FILE));
+        // Convert all coin values to BigInt
+        for (const [userId, amount] of Object.entries(loadedCoins)) {
+            userCoins[userId] = BigInt(amount);
+        }
     }
     if (fs.existsSync(COOLDOWNS_FILE)) {
         cooldowns = JSON.parse(fs.readFileSync(COOLDOWNS_FILE));
@@ -50,10 +54,10 @@ try {
 
 // Save functions
 function saveCoins() {
-    // Convert BigInt values to regular numbers before saving
+    // Convert BigInt values to strings before saving
     const coinsToSave = {};
     for (const [userId, amount] of Object.entries(userCoins)) {
-        coinsToSave[userId] = Number(amount);
+        coinsToSave[userId] = amount.toString();
     }
     fs.writeFileSync(COINS_FILE, JSON.stringify(coinsToSave, null, 2));
 }
@@ -162,49 +166,57 @@ process.on('SIGTERM', () => {
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
+    // Check if the message is in dokkaebi-bag channel for commands
+    const isDokkaebiBag = message.channel.name === 'dokkaebi-bag';
     const userId = message.author.id;
-    const currentTime = new Date();
 
     if (!userCoins[userId]) {
-        userCoins[userId] = 0;
+        userCoins[userId] = BigInt(0);
         saveCoins(); // Save changes
     }
 
-    if (message.content.startsWith('!help')) {
-        const helpEmbed = {
-            color: 0x0099ff,
-            title: 'ORV Bot Commands',
-            fields: [
-                { name: '!quest', value: 'Start a quest to earn coins' },
-                { name: '!checkin', value: 'Check in daily to earn coins' },
-                { name: '!coins', value: 'Check your coin balance' },
-                { name: '!shop', value: 'View and purchase items from the shop' }
-            ],
-            timestamp: new Date()
-        };
-        await message.channel.send({ embeds: [helpEmbed] });
-    }
+    // Handle commands (only in dokkaebi-bag)
+    if (message.content.startsWith('!')) {
+        if (!isDokkaebiBag) {
+            return; // Silently ignore commands in other channels
+        }
 
-    if (message.content.startsWith('!quest')) {
-        await handleQuestCommand(message, userQuests, cooldowns, userCoins);
-        saveCoins();
-        saveCooldowns();
-    }
+        if (message.content.startsWith('!help')) {
+            const helpEmbed = {
+                color: 0x0099ff,
+                title: 'ORV Bot Commands',
+                fields: [
+                    { name: '!quest', value: 'Start a quest to earn coins' },
+                    { name: '!checkin', value: 'Check in daily to earn coins' },
+                    { name: '!coins', value: 'Check your coin balance' },
+                    { name: '!shop', value: 'View and purchase items from the shop' }
+                ],
+                timestamp: new Date()
+            };
+            await message.channel.send({ embeds: [helpEmbed] });
+        }
 
-    if (message.content.startsWith('!checkin')) {
-        await handleCheckInCommand(message, checkins, userCoins);
-        saveCoins();
-        saveCheckins();
-    }
+        if (message.content.startsWith('!quest')) {
+            await handleQuestCommand(message, userQuests, cooldowns, userCoins);
+            saveCoins();
+            saveCooldowns();
+        }
 
-    if (message.content.startsWith('!coins')) {
-        const coins = userCoins[userId] || 0;
-        await message.reply(`You have ${coins} coins.`);
-    }
+        if (message.content.startsWith('!checkin')) {
+            await handleCheckInCommand(message, checkins, userCoins);
+            saveCoins();
+            saveCheckins();
+        }
 
-    if (message.content.startsWith('!shop')) {
-        buyingUserId = userId;
-        await handleShopCommand(message);
+        if (message.content.startsWith('!coins')) {
+            const coins = userCoins[userId] || BigInt(0);
+            await message.reply(`You have ${coins.toString()} coins.`);
+        }
+
+        if (message.content.startsWith('!shop')) {
+            buyingUserId = userId;
+            await handleShopCommand(message);
+        }
     }
 
     // Check for quest completion on every message

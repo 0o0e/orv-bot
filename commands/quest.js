@@ -12,10 +12,10 @@ const difficultyTimes = {
 
 // Define cooldown times based on difficulty (in milliseconds)
 const cooldownTimes = {
-    easy: 1000 * 60 * 60 * 2, // 2 hours
-    medium: 1000 * 60 * 60 * 3, // 3 hours
-    hard: 1000 * 60 * 60 * 4, // 4 hours
-    extreme: 1000 * 60 * 60 * 5, // 5 hours
+    easy: 1000 * 60 * 60 * 12, // 12 hours
+    medium: 1000 * 60 * 60 * 12, // 12 hours
+    hard: 1000 * 60 * 60 * 12, // 12 hours
+    extreme: 1000 * 60 * 60 * 12, // 12 hours
 };
 
 function formatTime(ms) {
@@ -26,14 +26,13 @@ function formatTime(ms) {
 
 async function handleQuestCommand(message, userQuests, cooldowns, userCoins) {
     const userId = message.author.id;
-    const currentTime = new Date();
+    const currentTime = Date.now();
 
     // Check if there is an ongoing quest
-    if (userQuests[userId] && Date.now() < userQuests[userId].expirationTime) {
-        const remainingTime = userQuests[userId].expirationTime - Date.now();
+    if (userQuests[userId] && currentTime < userQuests[userId].expirationTime) {
+        const remainingTime = userQuests[userId].expirationTime - currentTime;
         const hoursLeft = Math.floor(remainingTime / (1000 * 60 * 60));
         const minutesLeft = Math.floor((remainingTime % (1000 * 60 * 60)) / (1000 * 60));
-        const secondsLeft = Math.floor((remainingTime % (1000 * 60)) / 1000);
 
         const questEmbed = createQuestEmbed(
             userQuests[userId].scenario,
@@ -43,7 +42,7 @@ async function handleQuestCommand(message, userQuests, cooldowns, userCoins) {
         );
 
         return message.channel.send({
-            content: `${message.author}, you already have a quest! You have **${hoursLeft} hours, ${minutesLeft} minutes and ${secondsLeft} seconds** left to finish it.`,
+            content: `${message.author}, you already have a quest! You have **${hoursLeft} hours and ${minutesLeft} minutes** left to finish it.`,
             embeds: [questEmbed],
         });
     }
@@ -51,13 +50,13 @@ async function handleQuestCommand(message, userQuests, cooldowns, userCoins) {
     // Check if the user is on cooldown
     if (cooldowns[userId] && currentTime < cooldowns[userId]) {
         const timeLeft = cooldowns[userId] - currentTime;
-        const timeLeftInHours = Math.floor(timeLeft / (1000 * 60 * 60));
-        const timeLeftInMinutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+        const hoursLeft = Math.floor(timeLeft / (1000 * 60 * 60));
+        const minutesLeft = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
         const attachment = new AttachmentBuilder('./cooldown_image.png');
 
         const cooldownEmbed = new EmbedBuilder()
             .setColor('#FF0000')
-            .setDescription(`You have to wait **${timeLeftInHours} hours and ${timeLeftInMinutes} minutes** before using this command again.`)
+            .setDescription(`You have to wait **${hoursLeft} hours and ${minutesLeft} minutes** before using this command again.`)
             .setTimestamp()
             .setImage('attachment://cooldown_image.png');
 
@@ -85,11 +84,12 @@ async function handleQuestCommand(message, userQuests, cooldowns, userCoins) {
         difficulty: difficulty,
         reward: reward,
         messagesSent: 0,
-        startTime: Date.now(),
-        expirationTime: Date.now() + timeLimit,
+        startTime: currentTime,
+        expirationTime: currentTime + timeLimit,
     };
 
-    cooldowns[userId] = currentTime.getTime() + cooldown;
+    // Set cooldown for when the quest expires
+    cooldowns[userId] = currentTime + timeLimit + cooldown;
     return { userQuests, cooldowns };
 }
 
@@ -142,14 +142,26 @@ async function completeQuest(message, userQuests, userCoins, userQuest) {
     const userId = message.author.id;
     const dokkaebiBagChannel = message.client.channels.cache.get('1292907948330451025');
 
-    userCoins[userId] += userQuest.reward;
+    // Initialize user's coins if they don't exist
+    if (!userCoins[userId]) {
+        userCoins[userId] = BigInt(0);
+    }
+
+    // Convert current coins to BigInt if they're not already
+    if (typeof userCoins[userId] !== 'bigint') {
+        userCoins[userId] = BigInt(userCoins[userId]);
+    }
+    
+    // Add reward as BigInt
+    const reward = BigInt(userQuest.reward || 0);
+    userCoins[userId] += reward;
 
     const attachment = new AttachmentBuilder('./completedquest.png');
     const embed = new EmbedBuilder()
         .setColor('#0099ff')
         .setTitle('Quest Completed!')
         .setImage('attachment://completedquest.png')
-        .setDescription(`You earned ${userQuest.reward} coins! You now have ${userCoins[userId]} coins.`)
+        .setDescription(`You earned ${userQuest.reward} coins! You now have ${userCoins[userId].toString()} coins.`)
         .setTimestamp();
 
     await dokkaebiBagChannel.send({ content: `${message.author}`, embeds: [embed], files: [attachment] });

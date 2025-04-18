@@ -50,7 +50,18 @@ async function handleCheckInCommand(message, userCheckins, userCoins) {
         coins += 15; // Bonus 15 coins for completing a week
     }
 
-    userCoins[userId] += coins;
+    // Initialize user's coins if they don't exist
+    if (!userCoins[userId]) {
+        userCoins[userId] = BigInt(0);
+    }
+
+    // Convert current coins to BigInt if they're not already
+    if (typeof userCoins[userId] !== 'bigint') {
+        userCoins[userId] = BigInt(userCoins[userId]);
+    }
+
+    // Add reward as BigInt
+    userCoins[userId] += BigInt(coins);
 
     // Update user's check-in data
     userCheckins[userId] = {
@@ -62,10 +73,11 @@ async function handleCheckInCommand(message, userCheckins, userCoins) {
     // Create the rewards display
     let rewardsMessage = "";
     for (let i = 1; i <= 7; i++) {
+        const reward = i * 5;
         if (i <= streak) {
-            rewardsMessage += `✅ Day ${i} - +${i * 5} 🪙\n`;
+            rewardsMessage += `✅ Day ${i} - +${reward} 🪙\n`;
         } else {
-            rewardsMessage += `⬜ Day ${i} - +${i * 5} 🪙\n`;
+            rewardsMessage += `⬜ Day ${i} - +${reward} 🪙\n`;
         }
     }
 
@@ -75,7 +87,7 @@ async function handleCheckInCommand(message, userCheckins, userCoins) {
     }
 
     // Create and send the check-in embed
-    const checkInEmbed = createCheckInEmbed(message.author, coins, streak, userCoins[userId], rewardsMessage);
+    const checkInEmbed = createCheckInEmbed(message.author, streak, coins, userCoins[userId].toString(), rewardsMessage);
     await message.channel.send({ embeds: [checkInEmbed] });
 
     return { userCheckins, userCoins };

@@ -30,16 +30,27 @@ function createPurchaseEmbed(user, itemToBuy, itemPrice, remainingCoins, expirat
     return embed;
 }
 
-function createCheckInEmbed(user, coins, streak, totalCoins, rewardsMessage) {
+function createCheckInEmbed(user, streak, coinsEarned, totalCoins, rewardsMessage) {
     const embed = new EmbedBuilder()
         .setColor('#0099ff')
         .setTitle('Daily Check-in')
-        .setDescription(`You checked in successfully and earned **${coins} coins!**`)
+        .setDescription(`You checked in successfully and earned ${coinsEarned} coins!`)
         .addFields(
-            { name: 'Current Streak', value: `${streak} days`, inline: true },
-            { name: 'Total Coins', value: `${totalCoins} 🪙`, inline: true }
+            { 
+                name: 'Current Streak',
+                value: `${streak} days`,
+                inline: true 
+            },
+            { 
+                name: 'Total Coins',
+                value: `${totalCoins} 🪙`,
+                inline: true 
+            }
         )
-        .addFields({ name: 'Rewards', value: rewardsMessage })
+        .addFields({ 
+            name: 'Rewards',
+            value: rewardsMessage 
+        })
         .setTimestamp()
         .setFooter({ text: 'Keep checking in daily for more rewards!' });
     return embed;
