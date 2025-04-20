@@ -8,9 +8,15 @@ const roles = {
     testrole3: 300,
 };
 
-async function handleShopCommand(message) {
+async function handleShopCommand(input) {
     const attachment = new AttachmentBuilder('./items.png');
-    await message.channel.send({ files: [attachment] });
+    
+    // Send initial message with image
+    if (input.reply) {
+        await input.reply({ files: [attachment] });
+    } else {
+        await input.channel.send({ files: [attachment] });
+    }
 
     const buttons = Object.keys(roles).map(role => (
         new ButtonBuilder()
@@ -20,17 +26,23 @@ async function handleShopCommand(message) {
     ));
 
     const row = new ActionRowBuilder().addComponents(buttons);
-    await message.channel.send({ content: 'Select an item to buy:', components: [row] });
+    
+    // Send follow-up message with buttons
+    if (input.followUp) {
+        await input.followUp({ content: 'Select an item to buy:', components: [row] });
+    } else {
+        await input.channel.send({ content: 'Select an item to buy:', components: [row] });
+    }
 }
 
 async function handleShopInteraction(interaction, userCoins, buyingUserId) {
     try {
         if (interaction.user.id !== buyingUserId) {
             await interaction.reply({ 
-                content: 'You must use the !shop command yourself to purchase an item.', 
+                content: 'You must use the /shop or !shop command yourself to make purchases.', 
                 ephemeral: true 
             });
-            return userCoins;
+            return null;
         }
 
         const userId = interaction.user.id;
@@ -39,15 +51,15 @@ async function handleShopInteraction(interaction, userCoins, buyingUserId) {
 
         if (!rolePrice) {
             await interaction.reply({ content: `Invalid role selected.`, ephemeral: true });
-            return userCoins;
+            return null;
         }
 
-        if (userCoins[userId] < rolePrice) {
+        if (!userCoins[userId] || userCoins[userId] < rolePrice) {
             await interaction.reply({ 
                 content: `You do not have enough coins to buy ${roleToBuy}. You need ${rolePrice} coins.`, 
                 ephemeral: true 
             });
-            return userCoins;
+            return null;
         }
 
         const role = interaction.guild.roles.cache.find(r => r.name === roleToBuy);
@@ -58,7 +70,7 @@ async function handleShopInteraction(interaction, userCoins, buyingUserId) {
                 content: `Role ${roleToBuy} not found in this server.`, 
                 ephemeral: true 
             });
-            return userCoins;
+            return null;
         }
 
         if (member.roles.cache.has(role.id)) {
@@ -66,7 +78,7 @@ async function handleShopInteraction(interaction, userCoins, buyingUserId) {
                 content: `You already have the role ${roleToBuy}.`, 
                 ephemeral: true 
             });
-            return userCoins;
+            return null;
         }
 
         // Add the role
@@ -119,7 +131,7 @@ async function handleShopInteraction(interaction, userCoins, buyingUserId) {
             content: 'An error occurred while processing your purchase. Please try again later.', 
             ephemeral: true 
         });
-        return userCoins;
+        return null;
     }
 }
 

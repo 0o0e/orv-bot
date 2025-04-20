@@ -1,21 +1,27 @@
 const { AttachmentBuilder, EmbedBuilder } = require('discord.js');
-const quests = require('../quests.js');
+const { Canvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
+const { quests, isCompliment } = require('../quests.js');
 const { createQuestEmbed } = require('../utils/embeds');
+const path = require('path');
+
+// Register the font
+const fontPath = path.join(__dirname, '..', 'fonts', 'Roboto-Bold.ttf');
+GlobalFonts.registerFromPath(fontPath, 'Roboto Bold');
 
 // Define different time limits for different difficulties (in milliseconds)
 const difficultyTimes = {
-    easy: 1000 * 60 * 30, // 30 minutes
-    medium: 1000 * 60 * 60, // 1 hour
-    hard: 1000 * 60 * 90, // 1.5 hours
-    extreme: 1000 * 60 * 120, // 2 hours
+    Easy: 1000 * 60 * 30, // 30 minutes
+    Medium: 1000 * 60 * 60, // 1 hour
+    Hard: 1000 * 60 * 90, // 1.5 hours
+    Extreme: 1000 * 60 * 120, // 2 hours
 };
 
 // Define cooldown times based on difficulty (in milliseconds)
 const cooldownTimes = {
-    easy: 1000 * 60 * 60 * 12, // 12 hours
-    medium: 1000 * 60 * 60 * 12, // 12 hours
-    hard: 1000 * 60 * 60 * 12, // 12 hours
-    extreme: 1000 * 60 * 60 * 12, // 12 hours
+    Easy: 1000 * 60 * 60 * 12, // 12 hours
+    Medium: 1000 * 60 * 60 * 12, // 12 hours
+    Hard: 1000 * 60 * 60 * 12, // 12 hours
+    Extreme: 1000 * 60 * 60 * 12, // 12 hours
 };
 
 function formatTime(ms) {
@@ -24,8 +30,80 @@ function formatTime(ms) {
     return `${hours} hours and ${minutes} minutes`;
 }
 
-async function handleQuestCommand(message, userQuests, cooldowns, userCoins) {
-    const userId = message.author.id;
+function wrapText(ctx, text, maxWidth) {
+    const words = text.split(' ');
+    const lines = [];
+    let currentLine = '';
+
+    for (const word of words) {
+        const testLine = currentLine + word + ' ';
+        const { width } = ctx.measureText(testLine);
+        if (width > maxWidth) {
+            lines.push(currentLine.trim());
+            currentLine = word + ' ';
+        } else {
+            currentLine = testLine;
+        }
+    }
+    if (currentLine) lines.push(currentLine.trim());
+    return lines;
+}
+
+async function createQuestCard(scenario, difficulty, timeLimit, reward) {
+    const width = 450;
+    const height = 350;
+
+    const canvas = new Canvas(width, height);
+    const ctx = canvas.getContext('2d');
+
+    // Load and draw background
+    const background = await loadImage('./profile.png');
+    ctx.drawImage(background, 0, 0, width, height);
+
+    // Text settings
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'center';
+
+    // Title
+    ctx.font = 'normal 20px "Roboto Bold"';
+    ctx.fillText('NEW QUEST', width / 2, 60);
+
+    // Scenario (multi-line)
+    ctx.font = 'normal 16px "Roboto Bold"';
+    const maxLineWidth = 350;
+    const lineHeight = 22;
+    const lines = wrapText(ctx, scenario, maxLineWidth);
+    let y = 100;
+    for (const line of lines) {
+        ctx.fillText(line, width / 2, y);
+        y += lineHeight;
+    }
+
+    // Info block
+    const infoYStart = y + 40;
+    ctx.textAlign = 'left';
+    ctx.font = 'normal 16px "Roboto Bold"';
+
+    // Draw each stat with consistent spacing
+    const leftMargin = 60;
+    const labelWidth = 95;
+    const stats = [
+        { label: 'DIFFICULTY:', value: difficulty },
+        { label: 'TIME LIMIT:', value: timeLimit },
+        { label: 'REWARDS:', value: `${reward} COINS` }
+    ];
+
+    stats.forEach((stat, index) => {
+        const yPos = infoYStart + (index * 25);
+        ctx.fillText(stat.label, leftMargin, yPos);
+        ctx.fillText(stat.value, leftMargin + labelWidth, yPos);
+    });
+
+    return canvas;
+}
+
+async function handleQuestCommand(input, userQuests, cooldowns, userCoins) {
+    const userId = input.user?.id || input.author.id;
     const currentTime = Date.now();
 
     // Check if there is an ongoing quest
@@ -33,18 +111,36 @@ async function handleQuestCommand(message, userQuests, cooldowns, userCoins) {
         const remainingTime = userQuests[userId].expirationTime - currentTime;
         const hoursLeft = Math.floor(remainingTime / (1000 * 60 * 60));
         const minutesLeft = Math.floor((remainingTime % (1000 * 60 * 60)) / (1000 * 60));
+        const timeLeft = formatTime(remainingTime);
 
-        const questEmbed = createQuestEmbed(
+        const questCanvas = await createQuestCard(
             userQuests[userId].scenario,
             userQuests[userId].difficulty,
-            formatTime(remainingTime),
+            timeLeft,
             userQuests[userId].reward
         );
 
-        return message.channel.send({
-            content: `${message.author}, you already have a quest! You have **${hoursLeft} hours and ${minutesLeft} minutes** left to finish it.`,
+        const buffer = await questCanvas.encode('png');
+        const attachment = new AttachmentBuilder(buffer, { name: 'quest.png' });
+
+        const questEmbed = new EmbedBuilder()
+            .setColor('#0099ff')
+            .setDescription(`You already have a quest! You have **${hoursLeft} hours and ${minutesLeft} minutes** left to finish it.`)
+            .setImage('attachment://quest.png')
+            .setTimestamp();
+
+        const replyContent = {
+            content: `${input.user || input.author}`,
             embeds: [questEmbed],
-        });
+            files: [attachment]
+        };
+
+        if (input.reply) {
+            await input.reply(replyContent);
+        } else {
+            await input.channel.send(replyContent);
+        }
+        return { userQuests, cooldowns };
     }
 
     // Check if the user is on cooldown
@@ -60,11 +156,18 @@ async function handleQuestCommand(message, userQuests, cooldowns, userCoins) {
             .setTimestamp()
             .setImage('attachment://cooldown_image.png');
 
-        return message.channel.send({
-            content: `${message.author}`,
+        const replyContent = {
+            content: `${input.user || input.author}`,
             embeds: [cooldownEmbed],
             files: [attachment]
-        });
+        };
+
+        if (input.reply) {
+            await input.reply(replyContent);
+        } else {
+            await input.channel.send(replyContent);
+        }
+        return { userQuests, cooldowns };
     }
 
     const selectedQuest = quests[Math.floor(Math.random() * quests.length)];
@@ -74,10 +177,29 @@ async function handleQuestCommand(message, userQuests, cooldowns, userCoins) {
 
     const timeLimit = difficultyTimes[difficulty];
     const cooldown = cooldownTimes[difficulty];
+    const timeLimitFormatted = formatTime(timeLimit);
 
-    const questEmbed = createQuestEmbed(scenario, difficulty, formatTime(timeLimit), reward);
+    const questCanvas = await createQuestCard(scenario, difficulty, timeLimitFormatted, reward);
+    const buffer = await questCanvas.encode('png');
+    const attachment = new AttachmentBuilder(buffer, { name: 'quest.png' });
 
-    await message.channel.send({ content: `${message.author}, A new scenario has arrived!`, embeds: [questEmbed] });
+    const questEmbed = new EmbedBuilder()
+        .setColor('#0099ff')
+        .setDescription('A new scenario has arrived!')
+        .setImage('attachment://quest.png')
+        .setTimestamp();
+
+    const replyContent = {
+        content: `${input.user || input.author}`,
+        embeds: [questEmbed],
+        files: [attachment]
+    };
+
+    if (input.reply) {
+        await input.reply(replyContent);
+    } else {
+        await input.channel.send(replyContent);
+    }
 
     userQuests[userId] = {
         scenario: scenario,
@@ -132,6 +254,51 @@ async function checkQuestCompletion(message, userQuests, userCoins) {
 
     if (userQuest.scenario === "solve this question: What cabin number was Kim Dokja in at the start of ORV?" && 
         message.content === "3807") {
+        return await completeQuest(message, userQuests, userCoins, userQuest);
+    }
+
+    // Handle birthday wish quest
+    if (userQuest.scenario === "Wish someone happy birthday in #members-birthday-party" && 
+        message.channel.name === 'members-birthday-party' &&
+        message.content.toLowerCase().includes('happy birthday')) {
+        return await completeQuest(message, userQuests, userCoins, userQuest);
+    }
+
+    // Handle Dokkaebi question
+    if (userQuest.scenario === "solve this question: What is the name of the Dokkaebi hosting the early scenarios?" && 
+        message.content.toLowerCase() === "bihyung") {
+        return await completeQuest(message, userQuests, userCoins, userQuest);
+    }
+
+    // Handle Jung Heewon's weapon question
+    if (userQuest.scenario === "solve this question: What weapon does Jung Heewon wield?" && 
+        message.content.toLowerCase() === "flame of justice") {
+        return await completeQuest(message, userQuests, userCoins, userQuest);
+    }
+
+    // Handle Kim Dokja's mental skill question
+    if (userQuest.scenario === "solve this question: What mental skill protects Kim Dokja's mind?" && 
+        message.content.toLowerCase().includes('fourth wall')) {
+        return await completeQuest(message, userQuests, userCoins, userQuest);
+    }
+
+    // Handle Salvation Church leader question
+    if (userQuest.scenario === "solve this question: Who leads the Salvation Church?" && 
+        message.content.toLowerCase() === "nirvana") {
+        return await completeQuest(message, userQuests, userCoins, userQuest);
+    }
+
+    // Handle writers-hub compliment quest
+    if (userQuest.scenario === "comment, compliment on a writers work in #writers-hub" && 
+        message.channel.name === 'writers-hub' && 
+        isCompliment(message)) {
+        return await completeQuest(message, userQuests, userCoins, userQuest);
+    }
+
+    // Handle oc-and-media compliment quest
+    if (userQuest.scenario === "comment, compliment on a artists work in #oc-and-media" && 
+        message.channel.name === 'oc-and-media' && 
+        isCompliment(message)) {
         return await completeQuest(message, userQuests, userCoins, userQuest);
     }
 

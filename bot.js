@@ -20,6 +20,7 @@ const path = require('path');
 const { handleQuestCommand, checkQuestCompletion } = require('./commands/quest');
 const { handleCheckInCommand } = require('./commands/checkin');
 const { handleShopCommand, handleShopInteraction } = require('./commands/shop');
+const { handleProfileCommand } = require('./commands/profile');
 
 // File paths for data storage
 const COINS_FILE = 'coins.json';
@@ -37,7 +38,6 @@ let buyingUserId = null;
 try {
     if (fs.existsSync(COINS_FILE)) {
         const loadedCoins = JSON.parse(fs.readFileSync(COINS_FILE));
-        // Convert all coin values to BigInt
         for (const [userId, amount] of Object.entries(loadedCoins)) {
             userCoins[userId] = BigInt(amount);
         }
@@ -54,7 +54,6 @@ try {
 
 // Save functions
 function saveCoins() {
-    // Convert BigInt values to strings before saving
     const coinsToSave = {};
     for (const [userId, amount] of Object.entries(userCoins)) {
         coinsToSave[userId] = amount.toString();
@@ -86,7 +85,8 @@ const commandList = [
     { name: '!quest', description: 'Starts a new quest or checks the status of your current quest.' },
     { name: '!coins', description: 'Displays your current coin balance.' },
     { name: '!shop', description: 'Shows the shop and allows you to buy an item, if you have enough coins.' },
-    { name: '!checkin', description: 'Check in daily to earn coins and maintain your streak.' }
+    { name: '!checkin', description: 'Check in daily to earn coins and maintain your streak.' },
+    { name: '!profile', description: 'Shows your profile card with username and coins.' }
 ];
 
 // const quests = [
@@ -163,84 +163,115 @@ process.on('SIGTERM', () => {
     process.exit();
 });
 
+// Handle message commands and quest completion
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    // Check if the message is in dokkaebi-bag channel for commands
-    const isDokkaebiBag = message.channel.name === 'dokkaebi-bag';
-    const userId = message.author.id;
+    // Check quest completion regardless of channel
+    const questCompletionResult = await checkQuestCompletion(message, userQuests, userCoins);
+    if (questCompletionResult) {
+        userQuests = questCompletionResult.userQuests;
+        userCoins = questCompletionResult.userCoins;
+        saveCoins();
+    }
 
+    // Initialize coins for new users
+    const userId = message.author.id;
     if (!userCoins[userId]) {
         userCoins[userId] = BigInt(0);
-        saveCoins(); // Save changes
+        saveCoins();
     }
 
-    // Handle commands (only in dokkaebi-bag)
+    // Handle prefix commands (only in dokkaebi-bag)
     if (message.content.startsWith('!')) {
+        const isDokkaebiBag = message.channel.name === 'dokkaebi-bag';
         if (!isDokkaebiBag) {
-            return; // Silently ignore commands in other channels
+            message.reply('Commands can only be used in the #dokkaebi-bag channel!');
+            return;
         }
 
-        if (message.content.startsWith('!help')) {
-            const helpEmbed = {
-                color: 0x0099ff,
-                title: 'ORV Bot Commands',
-                fields: [
-                    { name: '!quest', value: 'Start a quest to earn coins' },
-                    { name: '!checkin', value: 'Check in daily to earn coins' },
-                    { name: '!coins', value: 'Check your coin balance' },
-                    { name: '!shop', value: 'View and purchase items from the shop' }
-                ],
-                timestamp: new Date()
-            };
-            await message.channel.send({ embeds: [helpEmbed] });
-        }
+        const command = message.content.toLowerCase().split(' ')[0];
 
-        if (message.content.startsWith('!quest')) {
-            await handleQuestCommand(message, userQuests, cooldowns, userCoins);
-            saveCoins();
-            saveCooldowns();
+        try {
+            switch (command) {
+                case '!help': {
+                    const helpEmbed = {
+                        color: 0x0099ff,
+                        title: 'ORV Bot Commands',
+                        fields: commandList.map(cmd => ({
+                            name: cmd.name,
+                            value: cmd.description
+                        })),
+                        timestamp: new Date()
+                    };
+                    await message.channel.send({ embeds: [helpEmbed] });
+                    break;
+                }
+                case '!quest': {
+                    const questResult = await handleQuestCommand(message, userQuests, cooldowns, userCoins);
+                    if (questResult) {
+                        userQuests = questResult.userQuests;
+                        cooldowns = questResult.cooldowns;
+                        saveCoins();
+                        saveCooldowns();
+                    }
+                    break;
+                }
+                case '!checkin': {
+                    const checkinResult = await handleCheckInCommand(message, checkins, userCoins);
+                    if (checkinResult) {
+                        checkins = checkinResult.checkins;
+                        userCoins = checkinResult.userCoins;
+                        saveCoins();
+                        saveCheckins();
+                    }
+                    break;
+                }
+                case '!coins': {
+                    const coins = userCoins[userId] || BigInt(0);
+                    await message.reply(`You have ${coins.toString()} coins.`);
+                    break;
+                }
+                case '!shop': {
+                    buyingUserId = userId;
+                    await handleShopCommand(message);
+                    break;
+                }
+                case '!profile': {
+                    await handleProfileCommand(message);
+                    break;
+                }
+            }
+        } catch (error) {
+            console.error('Error handling prefix command:', error);
+            await message.reply('There was an error executing this command! Please try again.');
         }
-
-        if (message.content.startsWith('!checkin')) {
-            await handleCheckInCommand(message, checkins, userCoins);
-            saveCoins();
-            saveCheckins();
-        }
-
-        if (message.content.startsWith('!coins')) {
-            const coins = userCoins[userId] || BigInt(0);
-            await message.reply(`You have ${coins.toString()} coins.`);
-        }
-
-        if (message.content.startsWith('!shop')) {
-            buyingUserId = userId;
-            await handleShopCommand(message);
-        }
-    }
-
-    // Check for quest completion on every message
-    const result = await checkQuestCompletion(message, userQuests, userCoins);
-    if (result) {
-        userQuests = result.userQuests;
-        userCoins = result.userCoins;
-        saveCoins(userCoins);
     }
 });
 
+// Handle button interactions (for shop)
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
-    const userId = interaction.user.id;
-    const userCoinsCopy = { ...userCoins };
-    
-    const updatedCoins = await handleShopInteraction(interaction, userCoinsCopy, userId);
-    if (updatedCoins) {
-        // Convert coin values to BigInt when loading back
-        for (const [id, amount] of Object.entries(updatedCoins)) {
-            userCoins[id] = BigInt(amount);
+    try {
+        if (interaction.user.id === buyingUserId) {
+            const newCoins = await handleShopInteraction(interaction, userCoins, buyingUserId);
+            if (newCoins) {
+                userCoins = newCoins;
+                saveCoins();
+            }
+        } else {
+            await interaction.reply({ 
+                content: 'You must use the !shop command yourself to make purchases.', 
+                ephemeral: true 
+            });
         }
-        saveCoins();
+    } catch (error) {
+        console.error('Error handling button interaction:', error);
+        await interaction.reply({ 
+            content: 'An error occurred while processing your purchase. Please try again later.',
+            ephemeral: true 
+        });
     }
 });
 

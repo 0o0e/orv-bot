@@ -1,7 +1,7 @@
 const { createCheckInEmbed } = require('../utils/embeds');
 
-async function handleCheckInCommand(message, userCheckins, userCoins) {
-    const userId = message.author.id;
+async function handleCheckInCommand(input, userCheckins, userCoins) {
+    const userId = input.user?.id || input.author.id;
 
     if (!userCheckins[userId]) {
         userCheckins[userId] = {
@@ -22,7 +22,12 @@ async function handleCheckInCommand(message, userCheckins, userCoins) {
 
         if (hoursDiff < 24) {
             const remainingHours = Math.ceil(24 - hoursDiff);
-            return message.channel.send(`You have already checked in today! Please wait **${remainingHours} hours** before checking in again.`);
+            const response = `You have already checked in today! Please wait **${remainingHours} hours** before checking in again.`;
+            if (input.reply) {
+                return await input.reply(response);
+            } else {
+                return await input.channel.send(response);
+            }
         }
     }
 
@@ -87,8 +92,13 @@ async function handleCheckInCommand(message, userCheckins, userCoins) {
     }
 
     // Create and send the check-in embed
-    const checkInEmbed = createCheckInEmbed(message.author, streak, coins, userCoins[userId].toString(), rewardsMessage);
-    await message.channel.send({ embeds: [checkInEmbed] });
+    const checkInEmbed = createCheckInEmbed(input.user || input.author, streak, coins, userCoins[userId].toString(), rewardsMessage);
+    
+    if (input.reply) {
+        await input.reply({ embeds: [checkInEmbed] });
+    } else {
+        await input.channel.send({ embeds: [checkInEmbed] });
+    }
 
     return { userCheckins, userCoins };
 }
