@@ -499,7 +499,7 @@ async function completeQuest(message, userQuests, userCoins, userQuest) {
     const reward = BigInt(userQuest.reward || 0);
     userCoins[userId] += reward;
 
-    const attachment = new AttachmentBuilder('./completedquest.png');
+const attachment = new AttachmentBuilder('../assets/images/completedquest.png');
     const embed = new EmbedBuilder()
         .setColor('#0099ff')
         .setTitle('Quest Completed!')

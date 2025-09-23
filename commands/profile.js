@@ -38,7 +38,6 @@ async function createProfileCard(user, coins) {
     // Load and draw background
 const backgroundPath = path.join(__dirname, '..', 'assets', 'images', 'profile.png');
 
-// Fix Windows backslashes → forward slashes
 const normalizedPath = backgroundPath.replace(/\\/g, '/');
 
 const background = await loadImage(normalizedPath);
