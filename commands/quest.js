@@ -3,13 +3,57 @@ const { Canvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
 const { quests, isCompliment } = require('../quests.js');
 const { createQuestEmbed } = require('../utils/embeds');
 const path = require('path');
+const fs = require('fs');
+
+// Path for saving quest data
+const QUEST_DATA_PATH = path.join(__dirname, '..', 'data', 'questData.json');
+
+// Function to save quest data
+function saveQuestData(userQuests, cooldowns) {
+    // Ensure the data directory exists
+    const dataDir = path.dirname(QUEST_DATA_PATH);
+    if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+    }
+
+    const data = {
+        userQuests,
+        cooldowns
+    };
+    fs.writeFileSync(QUEST_DATA_PATH, JSON.stringify(data, (key, value) => {
+        // Convert BigInt to string for JSON storage
+        if (typeof value === 'bigint') {
+            return value.toString();
+        }
+        return value;
+    }, 2));
+}
+
+// Function to load quest data
+function loadQuestData() {
+    if (!fs.existsSync(QUEST_DATA_PATH)) {
+        return { userQuests: {}, cooldowns: {} };
+    }
+
+    try {
+        const data = JSON.parse(fs.readFileSync(QUEST_DATA_PATH, 'utf8'));
+        return {
+            userQuests: data.userQuests || {},
+            cooldowns: data.cooldowns || {}
+        };
+    } catch (error) {
+        console.error('Error loading quest data:', error);
+        return { userQuests: {}, cooldowns: {} };
+    }
+}
 
 // Register the font
-const fontPath = path.join(__dirname, '..', 'fonts', 'Roboto-Bold.ttf');
-GlobalFonts.registerFromPath(fontPath, 'Roboto Bold');
+const fontPath = path.join(__dirname, '..', 'fonts', 'BebasNeue-Regular.ttf');
+GlobalFonts.registerFromPath(fontPath, 'Bebas Neue');
 
 // Define different time limits for different difficulties (in milliseconds)
 const difficultyTimes = {
+    // Easy: 1000 * 30, // 30 seconds
     Easy: 1000 * 60 * 30, // 30 minutes
     Medium: 1000 * 60 * 60, // 1 hour
     Hard: 1000 * 60 * 90, // 1.5 hours
@@ -27,7 +71,15 @@ const cooldownTimes = {
 function formatTime(ms) {
     const hours = Math.floor(ms / (1000 * 60 * 60));
     const minutes = Math.floor((ms % (1000 * 60 * 60)) / (1000 * 60));
-    return `${hours} hours and ${minutes} minutes`;
+    const seconds = Math.floor((ms % (1000 * 60)) / 1000);
+
+    if (hours > 0) {
+        return `${hours} hour${hours !== 1 ? 's' : ''} and ${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    } else if (minutes > 0) {
+        return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    } else {
+        return `${seconds} second${seconds !== 1 ? 's' : ''}`;
+    }
 }
 
 function wrapText(ctx, text, maxWidth) {
@@ -50,53 +102,102 @@ function wrapText(ctx, text, maxWidth) {
 }
 
 async function createQuestCard(scenario, difficulty, timeLimit, reward) {
-    const width = 450;
-    const height = 350;
+    const width = 920;
+    const height = 580;
 
     const canvas = new Canvas(width, height);
     const ctx = canvas.getContext('2d');
 
+    // Enable text anti-aliasing
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
     // Load and draw background
     const background = await loadImage('./profile.png');
     ctx.drawImage(background, 0, 0, width, height);
+
+    // Shadow settings
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
 
     // Text settings
     ctx.fillStyle = '#FFFFFF';
     ctx.textAlign = 'center';
 
     // Title
-    ctx.font = 'normal 20px "Roboto Bold"';
-    ctx.fillText('NEW QUEST', width / 2, 60);
-
-    // Scenario (multi-line)
-    ctx.font = 'normal 16px "Roboto Bold"';
-    const maxLineWidth = 350;
-    const lineHeight = 22;
-    const lines = wrapText(ctx, scenario, maxLineWidth);
-    let y = 100;
-    for (const line of lines) {
-        ctx.fillText(line, width / 2, y);
-        y += lineHeight;
-    }
+    ctx.font = 'normal 64px "Bebas Neue"';
+    ctx.fillText('< NEW QUEST >', width / 2, 100);
 
     // Info block
-    const infoYStart = y + 40;
     ctx.textAlign = 'left';
-    ctx.font = 'normal 16px "Roboto Bold"';
 
-    // Draw each stat with consistent spacing
-    const leftMargin = 60;
-    const labelWidth = 95;
+    const leftMargin = 120;
+    const rightMargin = 120;
+    let y = 200;
+
+    // Draw Clear Condition label
+    ctx.font = 'normal 48px "Bebas Neue"';  // Label font size
+    const clearConditionLabel = 'CLEAR CONDITION:';
+    ctx.fillText(clearConditionLabel, leftMargin, y);
+    
+    // Calculate width of the label to know where to start the scenario text
+    const labelWidth = ctx.measureText(clearConditionLabel).width + 20;
+    
+    // Handle scenario text wrapping with larger font
+    ctx.font = 'normal 44px "Bebas Neue"';  // Scenario text slightly smaller than label
+    const maxWidth = width - (leftMargin + rightMargin);
+    const wrappedLines = [];
+    
+    // Split scenario into words
+    const words = scenario.split(' ');
+    let currentLine = '';
+    let isFirstLine = true;
+    
+    for (const word of words) {
+        const testLine = currentLine + (currentLine ? ' ' : '') + word;
+        const testWidth = isFirstLine ? 
+            ctx.measureText(testLine).width + leftMargin + labelWidth :
+            ctx.measureText(testLine).width + leftMargin;
+            
+        if (testWidth > width - rightMargin) {
+            wrappedLines.push(currentLine);
+            currentLine = word;
+            isFirstLine = false;
+        } else {
+            currentLine = testLine;
+        }
+    }
+    if (currentLine) {
+        wrappedLines.push(currentLine);
+    }
+    
+    // Draw wrapped text
+    wrappedLines.forEach((line, i) => {
+        const xPos = i === 0 ? leftMargin + labelWidth : leftMargin;
+        ctx.fillText(line, xPos, y + (i * 50));  // Increased line spacing for larger font
+    });
+
+    // Update y position based on number of lines
+    y += Math.max(70, (wrappedLines.length * 50)) + 20;
+
+    // Draw remaining stats
     const stats = [
         { label: 'DIFFICULTY:', value: difficulty },
         { label: 'TIME LIMIT:', value: timeLimit },
         { label: 'REWARDS:', value: `${reward} COINS` }
     ];
 
-    stats.forEach((stat, index) => {
-        const yPos = infoYStart + (index * 25);
-        ctx.fillText(stat.label, leftMargin, yPos);
-        ctx.fillText(stat.value, leftMargin + labelWidth, yPos);
+    stats.forEach(stat => {
+        // Draw label with larger font
+        ctx.font = 'normal 48px "Bebas Neue"';
+        ctx.fillText(stat.label, leftMargin, y);
+        
+        // Draw value with slightly smaller font
+        ctx.font = 'normal 44px "Bebas Neue"';
+        ctx.fillText(stat.value, leftMargin + 260, y);
+        y += 65;  // Increased spacing between stats
     });
 
     return canvas;
@@ -109,8 +210,6 @@ async function handleQuestCommand(input, userQuests, cooldowns, userCoins) {
     // Check if there is an ongoing quest
     if (userQuests[userId] && currentTime < userQuests[userId].expirationTime) {
         const remainingTime = userQuests[userId].expirationTime - currentTime;
-        const hoursLeft = Math.floor(remainingTime / (1000 * 60 * 60));
-        const minutesLeft = Math.floor((remainingTime % (1000 * 60 * 60)) / (1000 * 60));
         const timeLeft = formatTime(remainingTime);
 
         const questCanvas = await createQuestCard(
@@ -125,7 +224,7 @@ async function handleQuestCommand(input, userQuests, cooldowns, userCoins) {
 
         const questEmbed = new EmbedBuilder()
             .setColor('#0099ff')
-            .setDescription(`You already have a quest! You have **${hoursLeft} hours and ${minutesLeft} minutes** left to finish it.`)
+            .setDescription(`You already have a quest! You have **${timeLeft}** left to finish it.`)
             .setImage('attachment://quest.png')
             .setTimestamp();
 
@@ -140,6 +239,7 @@ async function handleQuestCommand(input, userQuests, cooldowns, userCoins) {
         } else {
             await input.channel.send(replyContent);
         }
+        saveQuestData(userQuests, cooldowns);
         return { userQuests, cooldowns };
     }
 
@@ -167,6 +267,7 @@ async function handleQuestCommand(input, userQuests, cooldowns, userCoins) {
         } else {
             await input.channel.send(replyContent);
         }
+        saveQuestData(userQuests, cooldowns);
         return { userQuests, cooldowns };
     }
 
@@ -208,11 +309,64 @@ async function handleQuestCommand(input, userQuests, cooldowns, userCoins) {
         messagesSent: 0,
         startTime: currentTime,
         expirationTime: currentTime + timeLimit,
+        messages: [], // Add array to store message history
     };
 
     // Set cooldown for when the quest expires
     cooldowns[userId] = currentTime + timeLimit + cooldown;
+    saveQuestData(userQuests, cooldowns);
     return { userQuests, cooldowns };
+}
+
+// Add this function to check for spam
+function isSpam(messages, newMessage) {
+    if (messages.length === 0) return false;
+
+    // Check time between messages (minimum 30 seconds)
+    const lastMessage = messages[messages.length - 1];
+    const timeDiff = newMessage.timestamp - lastMessage.timestamp;
+    if (timeDiff < 30000) { // 30 seconds in milliseconds
+        return true;
+    }
+
+    // Check for similar content using Levenshtein distance
+    function levenshteinDistance(str1, str2) {
+        const m = str1.length;
+        const n = str2.length;
+        const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+
+        for (let i = 0; i <= m; i++) dp[i][0] = i;
+        for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+        for (let i = 1; i <= m; i++) {
+            for (let j = 1; j <= n; j++) {
+                if (str1[i - 1] === str2[j - 1]) {
+                    dp[i][j] = dp[i - 1][j - 1];
+                } else {
+                    dp[i][j] = 1 + Math.min(
+                        dp[i - 1][j],     // deletion
+                        dp[i][j - 1],     // insertion
+                        dp[i - 1][j - 1]  // substitution
+                    );
+                }
+            }
+        }
+        return dp[m][n];
+    }
+
+    // Calculate similarity ratio
+    const similarityThreshold = 0.8;
+    for (const message of messages) {
+        const distance = levenshteinDistance(message.content.toLowerCase(), newMessage.content.toLowerCase());
+        const maxLength = Math.max(message.content.length, newMessage.content.length);
+        const similarity = 1 - (distance / maxLength);
+        
+        if (similarity > similarityThreshold) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 async function checkQuestCompletion(message, userQuests, userCoins) {
@@ -231,6 +385,7 @@ async function checkQuestCompletion(message, userQuests, userCoins) {
 
         await dokkaebiBagChannel.send({ content: `<@${userId}>`, embeds: [failedQuestEmbed] });
         delete userQuests[userId];
+        saveQuestData(userQuests, {});
         return { userQuests, userCoins };
     }
 
@@ -241,7 +396,27 @@ async function checkQuestCompletion(message, userQuests, userCoins) {
 
     if (userQuest.scenario === "send 10 messages in #general in the span of 1 hour, no spam allowed" && 
         message.channel.name === 'general') {
+        
+        // Initialize messages array if it doesn't exist
+        if (!userQuest.messages) {
+            userQuest.messages = [];
+        }
+
+        // Check for spam
+        const newMessage = {
+            content: message.content,
+            timestamp: Date.now()
+        };
+
+        if (isSpam(userQuest.messages, newMessage)) {
+            // Silently ignore spam messages
+            return { userQuests, userCoins };
+        }
+
+        // Add message to history and increment counter
+        userQuest.messages.push(newMessage);
         userQuest.messagesSent++;
+
         if (userQuest.messagesSent >= 10 && Date.now() - userQuest.startTime <= 3600000) {
             return await completeQuest(message, userQuests, userCoins, userQuest);
         }
@@ -302,6 +477,7 @@ async function checkQuestCompletion(message, userQuests, userCoins) {
         return await completeQuest(message, userQuests, userCoins, userQuest);
     }
 
+    saveQuestData(userQuests, {});
     return { userQuests, userCoins };
 }
 
@@ -334,10 +510,12 @@ async function completeQuest(message, userQuests, userCoins, userQuest) {
     await dokkaebiBagChannel.send({ content: `${message.author}`, embeds: [embed], files: [attachment] });
     delete userQuests[userId];
 
+    saveQuestData(userQuests, {});
     return { userQuests, userCoins };
 }
 
 module.exports = {
     handleQuestCommand,
-    checkQuestCompletion
+    checkQuestCompletion,
+    loadQuestData
 }; 

@@ -1,0 +1,139 @@
+{
+  "items": [
+    {
+      "id": "testrole1",
+      "name": "a very long title rolee",
+      "price": 300,
+      "description": "A test role that lasts for 1 minute",
+      "type": "role",
+      "duration": 60000,
+      "color": "#e2339c"
+    },
+    {
+      "id": "testrole2",
+      "name": "Test Role 2",
+      "price": 300,
+      "description": "test role that lasts for 1 minute",
+      "type": "role",
+      "duration": 60000,
+      "color": "#34733b"
+    },
+    {
+      "id": "testrole3",
+      "name": "Test Role 3",
+      "price": 300,
+      "description": "description blablabla",
+      "type": "role",
+      "duration": 60000,
+      "color": "#810808"
+    },
+    {
+      "id": "vip_role",
+      "name": "test",
+      "price": 500,
+      "description": "a test role",
+      "type": "role",
+      "duration": 300000,
+      "color": "#ffd700"
+    },
+    {
+      "id": "mod_role",
+      "name": "test",
+      "price": 1000,
+      "description": "A test role",
+      "type": "role",
+      "duration": 600000,
+      "color": "#9b59b6"
+    },
+    {
+      "id": "admin_role",
+      "name": "test",
+      "price": 2000,
+      "description": "a test role",
+      "type": "role",
+      "duration": 900000,
+      "color": "#e74c3c"
+    },
+    {
+      "id": "legendary_role",
+      "name": "test",
+      "price": 5000,
+      "description": "A test role",
+      "type": "role",
+      "duration": 1800000,
+      "color": "#f1c40f"
+    },
+    {
+      "id": "mythic_role",
+      "name": "test",
+      "price": 10000,
+      "description": "A test role",
+      "type": "role",
+      "duration": 3600000,
+      "color": "#e91e63"
+    },
+    {
+      "id": "ultimate_role",
+      "name": "test",
+      "price": 50000,
+      "description": "A test role",
+      "type": "role",
+      "duration": 7200000,
+      "color": "#2ecc71"
+    },
+    {
+      "id": "constellation_role",
+      "name": "test",
+      "price": 75000,
+      "description": "A test role",
+      "type": "role",
+      "duration": 10800000,
+      "color": "#1abc9c"
+    },
+    {
+      "id": "nebula_role",
+      "name": "test",
+      "price": 100000,
+      "description": "A test role",
+      "type": "role",
+      "duration": 14400000,
+      "color": "#9b59b6"
+    },
+    {
+      "id": "galaxy_role",
+      "name": "test",
+      "price": 150000,
+      "description": "A test role",
+      "type": "role",
+      "duration": 18000000,
+      "color": "#3498db"
+    },
+    {
+      "id": "celestial_role",
+      "name": "test",
+      "price": 200000,
+      "description": "A test role",
+      "type": "role",
+      "duration": 21600000,
+      "color": "#e67e22"
+    },
+    {
+      "id": "cosmic_role",
+      "name": "test",
+      "price": 250000,
+      "description": "A test role",
+      "type": "role",
+      "duration": 25200000,
+      "color": "#8e44ad"
+    },
+    {
+      "id": "eternal_role",
+      "name": "test",
+      "price": 1000000,
+      "description": "A test role",
+      "type": "role",
+      "duration": 86400000,
+      "color": "#f39c12"
+    }
+  ]
+} 

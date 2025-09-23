@@ -1,6 +1,10 @@
 const { createCheckInEmbed } = require('../utils/embeds');
 
 async function handleCheckInCommand(input, userCheckins, userCoins) {
+    // Ensure userCheckins and userCoins are initialized
+    if (!userCheckins) userCheckins = {};
+    if (!userCoins) userCoins = {};
+    
     const userId = input.user?.id || input.author.id;
 
     if (!userCheckins[userId]) {
@@ -24,10 +28,11 @@ async function handleCheckInCommand(input, userCheckins, userCoins) {
             const remainingHours = Math.ceil(24 - hoursDiff);
             const response = `You have already checked in today! Please wait **${remainingHours} hours** before checking in again.`;
             if (input.reply) {
-                return await input.reply(response);
+                await input.reply(response);
             } else {
-                return await input.channel.send(response);
+                await input.channel.send(response);
             }
+            return { checkins: userCheckins, userCoins };
         }
     }
 
@@ -100,7 +105,7 @@ async function handleCheckInCommand(input, userCheckins, userCoins) {
         await input.channel.send({ embeds: [checkInEmbed] });
     }
 
-    return { userCheckins, userCoins };
+    return { checkins: userCheckins, userCoins };
 }
 
 module.exports = {

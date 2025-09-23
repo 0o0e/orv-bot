@@ -20,7 +20,8 @@ const path = require('path');
 const { handleQuestCommand, checkQuestCompletion } = require('./commands/quest');
 const { handleCheckInCommand } = require('./commands/checkin');
 const { handleShopCommand, handleShopInteraction } = require('./commands/shop');
-const { handleProfileCommand } = require('./commands/profile');
+const { handleProfileCommand } = require('./commands/profile.js');
+const { execute: setBio } = require('./commands/setbio.js');
 
 // File paths for data storage
 const COINS_FILE = 'coins.json';
@@ -54,9 +55,15 @@ try {
 
 // Save functions
 function saveCoins() {
+    if (!userCoins || typeof userCoins !== 'object') {
+        userCoins = {};
+        console.error('Warning: userCoins was null or undefined, initializing as empty object');
+    }
     const coinsToSave = {};
     for (const [userId, amount] of Object.entries(userCoins)) {
-        coinsToSave[userId] = amount.toString();
+        if (amount !== null && amount !== undefined) {
+            coinsToSave[userId] = amount.toString();
+        }
     }
     fs.writeFileSync(COINS_FILE, JSON.stringify(coinsToSave, null, 2));
 }
@@ -66,6 +73,10 @@ function saveCooldowns() {
 }
 
 function saveCheckins() {
+    if (!checkins || typeof checkins !== 'object') {
+        checkins = {};
+        console.error('Warning: checkins was null or undefined, initializing as empty object');
+    }
     fs.writeFileSync(CHECKINS_FILE, JSON.stringify(checkins, null, 2));
 }
 
@@ -186,7 +197,6 @@ client.on('messageCreate', async message => {
     if (message.content.startsWith('!')) {
         const isDokkaebiBag = message.channel.name === 'dokkaebi-bag';
         if (!isDokkaebiBag) {
-            message.reply('Commands can only be used in the #dokkaebi-bag channel!');
             return;
         }
 
@@ -239,6 +249,12 @@ client.on('messageCreate', async message => {
                 }
                 case '!profile': {
                     await handleProfileCommand(message);
+                    break;
+                }
+                case '!setbio': {
+                    // Remove the command prefix and get just the bio text
+                    const bioText = message.content.slice('!setbio'.length).trim();
+                    await setBio(message, bioText.split(' '));
                     break;
                 }
             }

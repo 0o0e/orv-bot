@@ -1,128 +1,226 @@
 const { AttachmentBuilder } = require('discord.js');
 const { Canvas, loadImage, GlobalFonts } = require('@napi-rs/canvas');
-const fs = require('fs');
 const path = require('path');
+const { pathToFileURL } = require('url');
+
+const fs = require('fs');
 
 // Register the font
-const fontPath = path.join(__dirname, '..', 'fonts', 'Roboto-Bold.ttf');
-GlobalFonts.registerFromPath(fontPath, 'Roboto Bold');
+const fontPath = path.join(__dirname, '..', 'fonts', 'BebasNeue-Regular.ttf');
+GlobalFonts.registerFromPath(fontPath, 'Bebas Neue');
 
-async function handleProfileCommand(input) {
+function loadBios() {
     try {
-        // Create a new canvas
-        const canvas = new Canvas(800, 600);
-        const ctx = canvas.getContext('2d');
+        const bios = JSON.parse(fs.readFileSync('./userBios.json', 'utf8'));
+        // Convert any number values to strings to prevent "0" appearing
+        Object.keys(bios).forEach(key => {
+            if (typeof bios[key] === 'number') {
+                bios[key] = bios[key].toString();
+            }
+        });
+        return bios;
+    } catch (error) {
+        return {};
+    }
+}
 
-        // Load the background image
-        const background = await loadImage('./profile.png');
-        ctx.drawImage(background, 0, 0, canvas.width, canvas.height);
+async function createProfileCard(user, coins) {
+    const width = 920;
+    const height = 470;
 
-        // Get user info
-        const user = input.author || input.user;
-        if (!user) {
-            throw new Error('Could not determine user');
-        }
+    const canvas = new Canvas(width, height);
+    const ctx = canvas.getContext('2d');
 
-        // Load and draw user avatar
-        try {
-            const avatar = await loadImage(user.displayAvatarURL({ extension: 'png', size: 256 }));
-            // Draw circular avatar
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(canvas.width / 2, 150, 64, 0, Math.PI * 2, true);
-            ctx.closePath();
-            ctx.clip();
-            ctx.drawImage(avatar, canvas.width / 2 - 64, 86, 128, 128);
-            ctx.restore();
+    // Enable text anti-aliasing
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
-            // Draw avatar border
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = 4;
-            ctx.beginPath();
-            ctx.arc(canvas.width / 2, 150, 64, 0, Math.PI * 2, true);
-            ctx.stroke();
-        } catch (avatarError) {
-            console.error('Error loading avatar:', avatarError);
-        }
+    // Load and draw background
+const backgroundPath = path.join(__dirname, '..', 'assets', 'images', 'profile.png');
 
-        // Get user data
-        const coinsData = JSON.parse(fs.readFileSync('./coins.json', 'utf8'));
-        const checkinsData = JSON.parse(fs.readFileSync('./checkins.json', 'utf8'));
-        const userCoins = coinsData[user.id] || '0';
-        const userStreak = checkinsData[user.id]?.streak || 0;
+// Fix Windows backslashes → forward slashes
+const normalizedPath = backgroundPath.replace(/\\/g, '/');
 
-        // Set up gradients for text
-        const gradient = ctx.createLinearGradient(0, 0, canvas.width, 0);
-        gradient.addColorStop(0, '#ffffff');  // More vibrant gold
-        gradient.addColorStop(1, '#ffffff');  // Orange tint
+const background = await loadImage(normalizedPath);
+ctx.drawImage(background, 0, 0, width, height);
 
-        // Draw username
-        ctx.font = '48px "Roboto Bold"';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#000000';
-        ctx.fillText(user.username, canvas.width / 2 + 2, 270 + 2); // Shadow
-        ctx.fillStyle = gradient;
-        ctx.fillText(user.username, canvas.width / 2, 270);
+    // Add shadow to text
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 2;
+    ctx.shadowOffsetY = 2;
 
+    // Draw user avatar
+    const avatarSize = 200;
+    const avatarX = 100;
+    const avatarY = 50;
+    const avatar = await loadImage(user.displayAvatarURL({ extension: 'png', size: 256 }));
+    
+    // Draw avatar with circular clip
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(avatarX + avatarSize/2, avatarY + avatarSize/2, avatarSize/2, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(avatar, avatarX, avatarY, avatarSize, avatarSize);
+    ctx.restore();
 
+    // Draw white outline for avatar
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(avatarX + avatarSize/2, avatarY + avatarSize/2, avatarSize/2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Draw title
+    ctx.textAlign = 'center';
+    ctx.font = 'normal 38px "Bebas Neue"';
+    const titleY = avatarY + avatarSize + 60;
+    
+    // Title text wrapping
+    const title = '{ A RANDOM INCARNATION }';
+    const titleMaxWidth = 220;
+    const titleWords = title.split(' ');
+    let titleLine = '';
+    let titleLines = [];
+    
+    for (const word of titleWords) {
+        const testLine = titleLine + (titleLine ? ' ' : '') + word;
+        const metrics = ctx.measureText(testLine);
         
-        // Reset shadow
-        ctx.shadowBlur = 0;
-
-        // Function to draw centered text with label and value
-        const drawCenteredStats = (label, value, y, labelColor, valueColor) => {
-            ctx.font = '32px "Roboto Bold"';
-            
-            // Calculate center point and offsets
-            const centerX = canvas.width / 2;
-            const spacing = 20; // Space between label and value
-            
-            // Draw label (left side)
-            ctx.textAlign = 'right';
-            // Shadow for label
-            ctx.fillStyle = '#000000';
-            ctx.fillText(label, centerX - spacing + 2, y + 2);
-            ctx.fillStyle = labelColor;
-            ctx.fillText(label, centerX - spacing, y);
-
-            // Draw value (right side)
-            ctx.textAlign = 'left';
-            // Shadow for value
-            ctx.fillStyle = '#000000';
-            ctx.fillText(value, centerX + spacing + 2, y + 2);
-            ctx.fillStyle = valueColor;
-            ctx.fillText(value, centerX + spacing, y);
-        };
-
-        // Draw stats with more spacing between elements
-        drawCenteredStats('💰 Coins:', userCoins, 380, '#ffffff', '#ffffff');
-        drawCenteredStats('🔥 Streak:', `${userStreak} days`, 430, '#ffffff', '#ffffff');
-
-        // Convert the canvas to a buffer
-        const buffer = await canvas.encode('png');
-        const attachment = new AttachmentBuilder(buffer, { name: 'profile.png' });
-
-        // Send the profile card
-        if (input.reply) {
-            await input.reply({ files: [attachment] });
-        } else if (input.channel) {
-            await input.channel.send({ files: [attachment] });
+        if (metrics.width > titleMaxWidth) {
+            titleLines.push(titleLine);
+            titleLine = word;
         } else {
-            throw new Error('Could not send message');
+            titleLine = testLine;
         }
+    }
+    if (titleLine) {
+        titleLines.push(titleLine);
+    }
+
+    // Draw brackets and title
+    const bracketSpacing = 130;
+    const lineHeight = 40;
+    const totalHeight = titleLines.length * lineHeight;
+    const centerX = avatarX + avatarSize/2;
+    
+    // Draw brackets
+    ctx.font = 'normal 45px "Bebas Neue"';
+    ctx.fillStyle = '#FFFFFF';
+    
+    // Draw title text
+    ctx.font = 'normal 38px "Bebas Neue"';
+    titleLines.forEach((line, index) => {
+        ctx.fillText(line, centerX, titleY + (index * lineHeight));
+    });
+
+    // Text settings for the rest
+    ctx.fillStyle = '#FFFFFF';
+    ctx.textAlign = 'left';
+
+    // Define x-coordinates for text
+    const textStartX = 450;
+
+    // Draw username and coins
+    ctx.font = 'normal 48px "Bebas Neue"';
+    ctx.fillText(`User: ${user.username}`, textStartX, 100);
+    ctx.fillText(`Coins: ${coins}`, textStartX, 160);
+
+    // Draw Overall Evaluation text
+    ctx.fillText('Overall Evaluation:', textStartX, 250);
+
+    // Draw bio if it exists
+    const bios = loadBios();
+    let bio = bios[user.id] || 'No bio yet';
+    const isDefaultBio = !bios[user.id];  // Check if using default bio
+    
+    // Clean up the bio text - remove any leading 'O' or '0'
+    bio = bio.replace(/^[O0]\s*/, '');
+    
+    // Bio text with wrapping
+    ctx.font = `normal ${isDefaultBio ? 'italic' : 'normal'} 36px "Bebas Neue"`;
+    const maxWidth = width - (textStartX + 50);
+    const words = bio.split(' ');
+    let line = '';
+    let y = 300;
+    
+    // Function to split long words
+    function splitLongWord(word, maxWidth) {
+        let parts = [];
+        let currentPart = '';
+        
+        for (let char of word) {
+            const testPart = currentPart + char;
+            const metrics = ctx.measureText(testPart);
+            
+            if (metrics.width > maxWidth) {
+                parts.push(currentPart);
+                currentPart = char;
+            } else {
+                currentPart += char;
+            }
+        }
+        
+        if (currentPart) {
+            parts.push(currentPart);
+        }
+        
+        return parts;
+    }
+    
+    for (const word of words) {
+        const testLine = line + (line ? ' ' : '') + word;
+        const metrics = ctx.measureText(testLine);
+        
+        if (metrics.width > maxWidth) {
+            // If we have a previous line, draw it
+            if (line) {
+                ctx.fillText(line, textStartX, y);
+                y += 40;
+                line = '';
+            }
+            
+            // Check if single word is too long
+            if (ctx.measureText(word).width > maxWidth) {
+                const parts = splitLongWord(word, maxWidth);
+                parts.forEach((part, index) => {
+                    ctx.fillText(part, textStartX, y);
+                    if (index < parts.length - 1) {
+                        y += 40;
+                    }
+                });
+                line = '';
+            } else {
+                line = word;
+            }
+        } else {
+            line = testLine;
+        }
+    }
+    
+    // Draw remaining line if any
+    if (line) {
+        ctx.fillText(line, textStartX, y);
+    }
+
+    return canvas;
+}
+
+async function handleProfileCommand(message) {
+    try {
+        const user = message.mentions.users.first() || message.author;
+        const coinsData = JSON.parse(fs.readFileSync('./coins.json', 'utf8'));
+        const coins = coinsData[user.id] || 0;
+
+        const profileCanvas = await createProfileCard(user, coins);
+const buffer = await profileCanvas.encode('png');
+const attachment = new AttachmentBuilder(buffer, { name: 'profile.png' });
+
+await message.reply({ files: [attachment] });
     } catch (error) {
         console.error('Error in profile command:', error);
-        const errorMessage = 'An error occurred while generating your profile. Please try again later.';
-        
-        try {
-            if (input.reply) {
-                await input.reply({ content: errorMessage, ephemeral: true });
-            } else if (input.channel) {
-                await input.channel.send(errorMessage);
-            }
-        } catch (replyError) {
-            console.error('Error sending error message:', replyError);
-        }
+        await message.reply('errrorrr.');
     }
 }
 
