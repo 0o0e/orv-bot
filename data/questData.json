@@ -1,12 +1,12 @@
 {
   "userQuests": {
-    "914308375095955478": {
-      "scenario": "comment, compliment on a writers work in #writers-hub",
+    "834588761706856479": {
+      "scenario": "comment, compliment on a artists work in #oc-and-media",
       "difficulty": "Medium",
       "reward": 50,
       "messagesSent": 0,
-      "startTime": 1758631535801,
-      "expirationTime": 1758635135801,
+      "startTime": 1758700386260,
+      "expirationTime": 1758703986260,
       "messages": []
     }
   },

@@ -160,7 +160,7 @@ function createPurchaseEmbed(user, Itemtobuy, itemprice, remainingCoins,expirati
 }
 
 client.once('ready', () => {
-    console.log('Bot is ready!');
+    console.log('If you see this ivan is alive and the bot works and shit');
 });
 
 
