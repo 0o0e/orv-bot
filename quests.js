@@ -5,7 +5,7 @@ const quests = [
     // { quest: "solve this question: What cabin number was Kim Dokja in at the start of ORV?", difficulty: "Easy", reward: 30 },
     { quest: "comment, compliment on a writers work in #writers-hub", difficulty: "Medium", reward: 50 },
     { quest: "comment, compliment on a artists work in #oc-and-media", difficulty: "Medium", reward: 50 },
-    { quest: "Wish someone happy birthday in #members-birthday-party", difficulty: "Easy", reward: 30 },
+    // { quest: "Wish someone happy birthday in #members-birthday-party", difficulty: "Easy", reward: 30 },
     // { quest: "solve this question: What is the name of the Dokkaebi hosting the early scenarios?", difficulty: "Easy", reward: 40 },
     // { quest: "solve this question: What weapon does Jung Heewon wield?", difficulty: "Easy", reward: 40 },
     // { quest: "solve this question: What mental skill protects Kim Dokja's mind?", difficulty: "Easy", reward: 40 },

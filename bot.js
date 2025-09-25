@@ -7,78 +7,19 @@
 //   client.close();
 // });
 
+const Database = require('better-sqlite3');
+const db = new Database('./database.sqlite'); // your SQLite file
 
-const mongoURL = process.env.mongoURL;
-
-const { EmbedBuilder, Client, GatewayIntentBits, AttachmentBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Partials } = require('discord.js');
-const fs = require('fs');
+const { ActivityType, EmbedBuilder, Client, GatewayIntentBits, Partials } = require('discord.js');
 require('dotenv').config();
 const moment = require('moment-timezone');
-const path = require('path');
 
 // Import command handlers
 const { handleQuestCommand, checkQuestCompletion } = require('./commands/quest');
 const { handleCheckInCommand } = require('./commands/checkin');
 const { handleShopCommand, handleShopInteraction } = require('./commands/shop');
-const { handleProfileCommand } = require('./commands/profile.js');
+const { handleProfileCommand, handleProfileSlashCommand } = require('./commands/profile.js');
 const { execute: setBio } = require('./commands/setbio.js');
-
-// File paths for data storage
-const COINS_FILE = 'coins.json';
-const COOLDOWNS_FILE = 'cooldowns.json';
-const CHECKINS_FILE = 'checkins.json';
-
-// Initialize data storage
-let userCoins = {};
-let cooldowns = {};
-let checkins = {};
-let userQuests = {};
-let buyingUserId = null;
-
-// Load existing data if available
-try {
-    if (fs.existsSync(COINS_FILE)) {
-        const loadedCoins = JSON.parse(fs.readFileSync(COINS_FILE));
-        for (const [userId, amount] of Object.entries(loadedCoins)) {
-            userCoins[userId] = BigInt(amount);
-        }
-    }
-    if (fs.existsSync(COOLDOWNS_FILE)) {
-        cooldowns = JSON.parse(fs.readFileSync(COOLDOWNS_FILE));
-    }
-    if (fs.existsSync(CHECKINS_FILE)) {
-        checkins = JSON.parse(fs.readFileSync(CHECKINS_FILE));
-    }
-} catch (error) {
-    console.error('Error loading data:', error);
-}
-
-// Save functions
-function saveCoins() {
-    if (!userCoins || typeof userCoins !== 'object') {
-        userCoins = {};
-        console.error('Warning: userCoins was null or undefined, initializing as empty object');
-    }
-    const coinsToSave = {};
-    for (const [userId, amount] of Object.entries(userCoins)) {
-        if (amount !== null && amount !== undefined) {
-            coinsToSave[userId] = amount.toString();
-        }
-    }
-    fs.writeFileSync(COINS_FILE, JSON.stringify(coinsToSave, null, 2));
-}
-
-function saveCooldowns() {
-    fs.writeFileSync(COOLDOWNS_FILE, JSON.stringify(cooldowns, null, 2));
-}
-
-function saveCheckins() {
-    if (!checkins || typeof checkins !== 'object') {
-        checkins = {};
-        console.error('Warning: checkins was null or undefined, initializing as empty object');
-    }
-    fs.writeFileSync(CHECKINS_FILE, JSON.stringify(checkins, null, 2));
-}
 
 const client = new Client({
     intents: [
@@ -100,19 +41,7 @@ const commandList = [
     { name: '!profile', description: 'Shows your profile card with username and coins.' }
 ];
 
-// const quests = [
-//     "send a message in #off-topic",
-//     "send 10 messages in #general in the span of 1 hour, no spam allowed",
-//     "solve this question: What is Yoo Joonghyuk's sister's name?",
-//     "solve this question: What cabin number was Kim Dokja in at the start of ORV?" // New quest added
-
-// ];
 const quests = require("./quests.js"); 
-
-
-
-
-
 
 const roles = {
     testrole1: 300,
@@ -125,9 +54,8 @@ function quest() {
 }
 
 function createQuestEmbed(scenario, difficulty, timeLimit) {
-    const embed = new EmbedBuilder()
+    return new EmbedBuilder()
         .setColor('#0099ff')
-        // .setTitle('A new scenario has arrived!')
         .addFields(
             { name: 'Difficulty', value: `**${difficulty}**`, inline: true },
             { name: 'Time Limit', value: `${timeLimit}`, inline: true },
@@ -137,158 +65,203 @@ function createQuestEmbed(scenario, difficulty, timeLimit) {
         .setDescription(`Your quest is: **${scenario}**`)
         .setTimestamp()
         .setFooter({ text: 'Good luck!' });
-    return embed;
 }
 
+function createPurchaseEmbed(user, Itemtobuy, itemprice, remainingCoins, expirationTime) {
+    const timeLeft = moment(expirationTime).fromNow(true); 
 
-function createPurchaseEmbed(user, Itemtobuy, itemprice, remainingCoins,expirationTime) {
-    const timeLeft = moment(expirationTime).fromNow(true); // Calculate remaining time in a human-readable format
-
-    const embed = new EmbedBuilder()
+    return new EmbedBuilder()
         .setColor('#0099ff')
         .setTitle('Item purchase successful!')
         .setDescription(`Congratulations <@${user.id}>! You have successfully purchased the item **${Itemtobuy}** for **${itemprice} coins**!`)
-        
         .addFields(
             { name: 'Remaining Coins', value: `${remainingCoins}`, inline: true },
-            { name: 'Expires In', value: `${timeLeft}`, inline: true } // Add the time left until expiration
-
+            { name: 'Expires In', value: `${timeLeft}`, inline: true }
         )
         .setTimestamp()
         .setFooter({ text: 'Enjoy your new item!' });
-    return embed;
 }
 
+// --- DATABASE HELPERS ---
+
+// Coins
+function getUserCoins(userId) {
+    const row = db.prepare('SELECT coins FROM users WHERE id = ?').get(userId);
+    if (!row) {
+        db.prepare('INSERT INTO users (id, coins) VALUES (?, 0)').run(userId);
+        return 0n;
+    }
+    return BigInt(row.coins);
+}
+
+function setUserCoins(userId, amount) {
+    db.prepare('UPDATE users SET coins = ? WHERE id = ?').run(amount.toString(), userId);
+}
+
+
+// Quests
+function getUserQuest(userId) {
+    const row = db.prepare('SELECT * FROM quests WHERE user_id = ?').get(userId);
+    if (!row) return null; // NO placeholder
+    return row;
+}
+
+function setUserQuest(userId, questData) {
+    db.prepare(`UPDATE quests SET 
+        scenario = ?, 
+        difficulty = ?, 
+        reward = ?, 
+        messages_sent = ?, 
+        start_time = ?, 
+        expiration_time = ?, 
+        messages = ? 
+        WHERE user_id = ?`)
+      .run(
+        questData.scenario,
+        questData.difficulty,
+        questData.reward,
+        questData.messages_sent,
+        questData.start_time,
+        questData.expiration_time,
+        JSON.stringify(questData.messages || []),
+        userId
+    );
+}
+
+// --- CLIENT READY ---
 client.once('ready', () => {
     console.log('If you see this ivan is alive and the bot works and shit');
+    client.user.setActivity("#BI-7623",{
+        type : ActivityType.Streaming,
+
+    })
 });
 
+let buyingUserId = null;
 
-process.on('SIGINT', () => {
-    saveCooldowns();
-    process.exit();
-});
-
-process.on('SIGTERM', () => {
-    saveCooldowns();
-    process.exit();
-});
-
-// Handle message commands and quest completion
+// --- MESSAGE HANDLER ---
 client.on('messageCreate', async message => {
     if (message.author.bot) return;
 
-    // Check quest completion regardless of channel
-    const questCompletionResult = await checkQuestCompletion(message, userQuests, userCoins);
-    if (questCompletionResult) {
-        userQuests = questCompletionResult.userQuests;
-        userCoins = questCompletionResult.userCoins;
-        saveCoins();
-    }
-
-    // Initialize coins for new users
     const userId = message.author.id;
-    if (!userCoins[userId]) {
-        userCoins[userId] = BigInt(0);
-        saveCoins();
-    }
 
-    // Handle prefix commands (only in dokkaebi-bag)
-    if (message.content.startsWith('!')) {
-        const isDokkaebiBag = message.channel.name === 'dokkaebi-bag';
-        if (!isDokkaebiBag) {
-            return;
-        }
+    // Check quest completion
+    await checkQuestCompletion(message); // handle DB updates inside
 
-        const command = message.content.toLowerCase().split(' ')[0];
+    // Initialize user in DB if not exists
+    getUserCoins(userId);
+    getUserQuest(userId);
 
-        try {
-            switch (command) {
-                case '!help': {
-                    const helpEmbed = {
-                        color: 0x0099ff,
-                        title: 'ORV Bot Commands',
-                        fields: commandList.map(cmd => ({
-                            name: cmd.name,
-                            value: cmd.description
-                        })),
-                        timestamp: new Date()
-                    };
-                    await message.channel.send({ embeds: [helpEmbed] });
-                    break;
-                }
-                case '!quest': {
-                    const questResult = await handleQuestCommand(message, userQuests, cooldowns, userCoins);
-                    if (questResult) {
-                        userQuests = questResult.userQuests;
-                        cooldowns = questResult.cooldowns;
-                        saveCoins();
-                        saveCooldowns();
-                    }
-                    break;
-                }
-                case '!checkin': {
-                    const checkinResult = await handleCheckInCommand(message, checkins, userCoins);
-                    if (checkinResult) {
-                        checkins = checkinResult.checkins;
-                        userCoins = checkinResult.userCoins;
-                        saveCoins();
-                        saveCheckins();
-                    }
-                    break;
-                }
-                case '!coins': {
-                    const coins = userCoins[userId] || BigInt(0);
-                    await message.reply(`You have ${coins.toString()} coins.`);
-                    break;
-                }
-                case '!shop': {
-                    buyingUserId = userId;
-                    await handleShopCommand(message);
-                    break;
-                }
-                case '!profile': {
-                    await handleProfileCommand(message);
-                    break;
-                }
-                case '!setbio': {
-                    // Remove the command prefix and get just the bio text
-                    const bioText = message.content.slice('!setbio'.length).trim();
-                    await setBio(message, bioText.split(' '));
-                    break;
-                }
-            }
-        } catch (error) {
-            console.error('Error handling prefix command:', error);
-            await message.reply('There was an error executing this command! Please try again.');
-        }
-    }
-});
+    // Only handle commands in dokkaebi-bag
+    if (!message.content.startsWith('!') || message.channel.name !== 'dokkaebi-bag') return;
 
-// Handle button interactions (for shop)
-client.on('interactionCreate', async interaction => {
-    if (!interaction.isButton()) return;
+    const command = message.content.toLowerCase().split(' ')[0];
 
     try {
-        if (interaction.user.id === buyingUserId) {
-            const newCoins = await handleShopInteraction(interaction, userCoins, buyingUserId);
-            if (newCoins) {
-                userCoins = newCoins;
-                saveCoins();
+        switch (command) {
+            case '!help': {
+                const helpEmbed = {
+                    color: 0x0099ff,
+                    title: 'ORV Bot Commands',
+                    fields: commandList.map(cmd => ({
+                        name: cmd.name,
+                        value: cmd.description
+                    })),
+                    timestamp: new Date()
+                };
+                await message.channel.send({ embeds: [helpEmbed] });
+                break;
             }
-        } else {
-            await interaction.reply({ 
-                content: 'You must use the !shop command yourself to make purchases.', 
-                ephemeral: true 
-            });
+            case '!quest': {
+                await handleQuestCommand(message); 
+                break;
+            }
+case '!checkin': {
+    await handleCheckInCommand(message);
+    break;
+}
+
+            case '!coins': {
+                const coins = getUserCoins(userId);
+                await message.reply(`You have ${coins} coins.`);
+                break;
+            }
+            case '!shop': {
+                buyingUserId = userId;
+                await handleShopCommand(message);
+                break;
+            }
+            case '!profile': {
+                await handleProfileCommand(message);
+                break;
+            }
+            case '!setbio': {
+                const bioText = message.content.slice('!setbio'.length).trim();
+                await setBio(message, bioText.split(' '));
+                break;
+            }
         }
     } catch (error) {
-        console.error('Error handling button interaction:', error);
-        await interaction.reply({ 
-            content: 'An error occurred while processing your purchase. Please try again later.',
-            ephemeral: true 
-        });
+        console.error('Error handling command:', error);
+        await message.reply('There was an error executing this command! Please try again.');
     }
 });
+
+// --- SHOP INTERACTIONS ---
+const ALLOWED_CHANNEL_ID = '1292907948330451025'; // your allowed channel
+
+client.on('interactionCreate', async (interaction) => {
+    try {
+        // Only handle slash commands
+        if (!interaction.isChatInputCommand()) return;
+
+        // Restrict all slash commands to one channel
+        if (interaction.channelId !== ALLOWED_CHANNEL_ID) {
+            return interaction.reply({ content: `nyooooo go to <#${ALLOWED_CHANNEL_ID}>.`, ephemeral: true });
+        }
+
+        const commandName = interaction.commandName;
+
+        switch (commandName) {
+            case 'profile':
+                await handleProfileSlashCommand(interaction);
+                break;
+
+            case 'coins':
+                const coins = getUserCoins(interaction.user.id);
+                await interaction.reply(`You have ${coins} coins.`);
+                break;
+
+            case 'checkin':
+                await handleCheckInCommand(interaction);
+                break;
+
+            case 'quest':
+                await handleQuestCommand(interaction);
+                break;
+
+            case 'shop':
+                buyingUserId = interaction.user.id;
+                await handleShopCommand(interaction);
+                break;
+
+            case 'setbio':
+                const bioText = interaction.options.getString('text');
+                await setBio(interaction, bioText.split(' '));
+                break;
+
+            default:
+                await interaction.reply({ content: 'Unknown command!', ephemeral: true });
+        }
+    } catch (error) {
+        console.error('Error handling interaction:', error);
+        if (interaction.replied || interaction.deferred) {
+            await interaction.followUp({ content: 'There was an error executing this command!', ephemeral: true });
+        } else {
+            await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
+        }
+    }
+});
+
 
 client.login(process.env.DISCORD_TOKEN);
